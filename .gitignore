@@ -1,47 +1,30 @@
+# Ignore class files and other Scala/Java build artifacts
+*.class
+*.tasty
+*.jar
+*.war
+*.ear
+*.classlist
+*.semanticdb
+
+# Ignore any .bin files (analysis artifacts)
+*.bin
+
+# Ignore Bloop config
+bloop.settings.json
+
+# If you want to ignore *all* JSON except a few special ones, do something like:
+# *.json
+# !some-important.json
+
+# If you only want to ignore certain JSON files (like root-test.json, Hanna_*.json), you can do:
+root-test.json
+Hanna_*.json
+
+# SBT target folder (often generated build outputs)
 target/
-!.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
 
-### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
-*.iws
-*.iml
-*.ipr
-out/
-!**/src/main/**/out/
-!**/src/test/**/out/
-
-### Eclipse ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/main/**/bin/
-!**/src/test/**/bin/
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
+# Metals, IntelliJ, or other IDE files/folders
+.metals/
+.idea/
 .vscode/
-
-### Mac OS ###
-.DS_Store
-
-### Scala ###
-.bsp/
