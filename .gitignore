@@ -28,3 +28,9 @@ target/
 .metals/
 .idea/
 .vscode/
+
+
+# Added by cargo
+/target
+cargo.lock
+/.cargo
