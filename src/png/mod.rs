@@ -1,80 +1,57 @@
 use image::io::Reader as ImageReader;
 use image::DynamicImage;
 use rayon::prelude::*;
-use std::fs::{File, create_dir_all};
-use std::io::{Write, BufWriter};
-
-const WINDOW_SIZE: usize = 4096; 
+use std::fs::{File, create_dir_all, read_dir};
+use std::io::BufWriter;
+use oxipng::{optimize, InFile, Options, OutFile};
 
 pub fn main() {
-    let img = ImageReader::open("src/image/heart.png").unwrap().decode().unwrap();
+    let image_dir = "src/image";
+    let output_dir = "src/compressed";
+    create_dir_all(output_dir).expect("Failed to create output directory");
 
-    let raw_data = extract_raw_data(&img);
+    let images = read_dir(image_dir).expect("Failed to read image directory")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().extension().map(|ext| ext == "png").unwrap_or(false))
+        .collect::<Vec<_>>();
 
-    let compressed_chunks: Vec<Vec<u8>> = raw_data
-        .par_chunks(16 * 1024) // 16KB chunks
-        .map(|chunk| lz77_compress(chunk))
-        .collect();
-
-    let compressed_data: Vec<u8> = compressed_chunks.concat();
-
-    create_dir_all("src/compressed").unwrap();
-    let file = File::create("src/compressed/compressed.lz77").unwrap();
-    
-    let mut buf_writer = BufWriter::new(file);
-    buf_writer.write_all(&compressed_data).unwrap();
-
-    println!("Compression complete! Saved as src/compressed/compressed.lz77");
-}
-
-fn extract_raw_data(img: &DynamicImage) -> Vec<u8> {
-    img.to_bytes()
-}
-
-fn lz77_compress(data: &[u8]) -> Vec<u8> {
-    let mut compressed = Vec::new();
-    let mut i = 0;
-
-    while i < data.len() {
-        let mut match_length = 0;
-        let mut match_distance = 0;
-
-        let start = if i >= WINDOW_SIZE { i - WINDOW_SIZE } else { 0 };
-        let window = &data[start..i];
-
-        let best_match = (0..window.len())
-            .into_par_iter()
-            .rev() 
-            .map(|j| {
-                let mut length = 0;
-                while length < 258 
-                    && i + length < data.len()
-                    && j + length < window.len()
-                    && window[j + length] == data[i + length]
-                {
-                    length += 1;
+    images.par_iter().for_each(|entry| {
+        let img = match ImageReader::open(entry.path()) {
+            Ok(reader) => match reader.decode() {
+                Ok(img) => img,
+                Err(e) => {
+                    eprintln!("Failed to decode image {}: {}", entry.path().display(), e);
+                    return;
                 }
-                (length, window.len() - j) 
-            })
-            .max_by_key(|&(length, _)| length);
-
-        if let Some((length, distance)) = best_match {
-            if length >= 3 {
-                compressed.push(0); // Match flag
-                compressed.push((distance >> 8) as u8);
-                compressed.push((distance & 0xFF) as u8);
-                compressed.push(length as u8);
-                i += length; 
-            } else {
-                compressed.push(1); // Literal flag
-                compressed.push(data[i]);
-                i += 1; 
+            },
+            Err(e) => {
+                eprintln!("Failed to open image {}: {}", entry.path().display(), e);
+                return;
             }
+        };
+
+        let compressed_path = format!("{}/{}", output_dir, entry.file_name().to_string_lossy());
+        if let Err(e) = save_png_compressed(&compressed_path, &img, 9) {
+            eprintln!("Failed to save PNG {}: {}", compressed_path, e);
         } else {
-            compressed.push(1); 
-            compressed.push(data[i]);
-            i += 1;
+            println!("Compression complete for: {}", entry.path().display());
+
+            let infile = InFile::Path(compressed_path.clone().into()); 
+            let options = Options::default(); 
+            let outfile = OutFile::Path(None);
+
+            if let Err(e) = optimize(&infile, &outfile, &options) {
+                eprintln!("Failed to optimize PNG {}: {}", compressed_path, e);
+            }
         }
-    }
-    compressed
+    });
+
+    println!("All images compressed!");
+}
+
+fn save_png_compressed(path: &str, img: &DynamicImage, quality: u8) -> std::io::Result<()> {
+    let file = File::create(path)?;
+    let buf_writer = BufWriter::new(file);
+    img.write_to(&mut buf_writer.into_inner()?, image::ImageOutputFormat::Png).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    Ok(())
 }
