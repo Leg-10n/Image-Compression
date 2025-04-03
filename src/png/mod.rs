@@ -1,54 +1,55 @@
-// In your png.rs (or any module you want to place this code in)
-
-use image::io::Reader as ImageReader;
-use image::{DynamicImage, ImageOutputFormat};
 use rayon::prelude::*;
-use std::fs::{File, create_dir_all};
-use std::io::BufWriter;
+use std::fs;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::Path;
-use oxipng::{optimize, InFile, Options, OutFile};
-use std::error::Error;
+use oxipng::{optimize_from_memory, Options};
+use std::time::Instant;
 
-/// Saves the PNG image to the given path using lossless encoding.
-pub fn save_png_compressed(path: &str, img: &DynamicImage, _quality: u8) -> std::io::Result<()> {
-    let file = File::create(path)?;
-    let mut buf_writer = BufWriter::new(file);
-    // For PNG, quality is not used because it's lossless.
-    img.write_to(&mut buf_writer, ImageOutputFormat::Png)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
-}
+pub fn main() {
+    let input_dir = "src/image";
+    let output_dir = "src/compressed";
 
-/// Compress a PNG image found at `input_path` by saving a compressed version
-/// to `output_dir` and then running an optimization with oxipng.
-pub fn compress_png(input_path: &str, output_dir: &str, quality: u8) -> Result<(), Box<dyn Error>> {
-    // Ensure the output directory exists.
-    create_dir_all(output_dir)?;
+    fs::create_dir_all(output_dir).expect("Failed to create output directory");
 
-    let input_path_obj = Path::new(input_path);
-    let file_name = input_path_obj.file_name()
-        .ok_or("Invalid input file name")?
-        .to_string_lossy();
-    let compressed_path = format!("{}/{}", output_dir, file_name);
+    let files: Vec<_> = fs::read_dir(input_dir)
+        .expect("Failed to read input directory")
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "png"))
+        .collect();
 
-    // Open and decode the PNG image.
-    let img = ImageReader::open(input_path)?
-        .decode()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let timer = Instant::now();
 
-    // Save the compressed image.
-    save_png_compressed(&compressed_path, &img, quality)?;
+    files
+        .par_iter()
+        .for_each(|file| {
+            let input_path = file.path();
+            let output_path = Path::new(output_dir).join(file.file_name());
 
-    println!("PNG compression complete for: {}", input_path);
+            println!("Compressing: {:?} -> {:?}", input_path, output_path);
 
-    // Optimize the newly saved PNG image using oxipng.
-    let infile = InFile::Path(compressed_path.clone().into());
-    let options = Options::default();
-    let outfile = OutFile::Path(None);
-
-    optimize(&infile, &outfile, &options)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-    println!("PNG optimization complete for: {}", input_path);
-
-    Ok(())
+            if let Ok(mut input_data) = File::open(&input_path).map(|mut file| {
+                let mut data = Vec::new();
+                file.read_to_end(&mut data).map(|_| data).unwrap_or_else(|e| {
+                    eprintln!("Failed to read {:?}: {:?}", input_path, e);
+                    Vec::new()
+                })
+            }) {
+                let options = Options::from_preset(1);
+                match optimize_from_memory(&input_data, &options) {
+                    Ok(output_data) => {
+                        if let Err(e) = File::create(&output_path)
+                            .and_then(|mut file| file.write_all(&output_data))
+                        {
+                            eprintln!("Failed to write {:?}: {:?}", output_path, e);
+                        }
+                    }
+                    Err(e) => eprintln!("Compression failed for {:?}: {:?}", input_path, e),
+                }
+            } else {
+                eprintln!("Failed to open {:?}", input_path);
+            }
+        });
+    let duration = timer.elapsed();
+    println!("Time taken to compressed {:.2?} ", duration);
 }
