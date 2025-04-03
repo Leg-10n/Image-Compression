@@ -1,0 +1,5 @@
+// right now i'm loading the entire image in right that's why my RAM is exploding 
+// Let's go back to using chunks (since the png i use is also big ~2.83MB).
+// break it down into chunks process each chunks in parallel with each other 
+
+// Currently it does work but 192 seconds. Try to run in chunks if it doesn't explode
